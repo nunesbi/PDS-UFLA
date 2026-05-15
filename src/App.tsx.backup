@@ -1,0 +1,1621 @@
+import { useState, useEffect, useRef } from 'react'
+import QRCode from 'qrcode'
+import html2canvas from 'html2canvas'
+import './App.css'
+import logo from './assets/logo.png'
+
+type Screen = 'landing' | 'login' | 'register' | 'home' | 'events' | 'certificates' | 'download-certificates' | 'profile' | 'admin-login' | 'admin-home' | 'admin-events' | 'admin-qr' | 'admin-certificates' | 'admin-reports'
+
+interface User {
+  id: string
+  name: string
+  email: string
+  cpf: string
+  institution: string
+  password: string
+  photo?: string
+  enrolledEvents: string[]
+}
+
+interface Event {
+  id: string
+  title: string
+  description: string
+  location: string
+  time: string
+  date: string
+  dateEnd: string
+  capacity: number
+  enrolled: number
+  category?: string
+  templateImage?: string
+  signatureImage?: string
+  nameColor?: string
+}
+
+interface Enrollment {
+  id: string
+  userId: string
+  eventId: string
+  qrCode: string
+  qrCodeImage: string
+  enrollmentDate: string
+  used: boolean
+}
+
+interface Attendance {
+  id: string
+  userId: string
+  eventId: string
+  attendanceDate: string
+}
+
+interface Certificate {
+  id: string
+  userId: string
+  userName: string
+  eventId: string
+  eventTitle: string
+  issueDate: string
+  status: 'pending' | 'sent'
+  certificateImage?: string
+}
+
+interface Toast {
+  id: string
+  message: string
+  type: 'success' | 'error' | 'info'
+}
+
+const StorageDB = {
+  users: {
+    get: () => JSON.parse(localStorage.getItem('cufla_users') || '[]') as User[],
+    set: (users: User[]) => localStorage.setItem('cufla_users', JSON.stringify(users)),
+  },
+  events: {
+    get: () => JSON.parse(localStorage.getItem('cufla_events') || '[]') as Event[],
+    set: (events: Event[]) => localStorage.setItem('cufla_events', JSON.stringify(events)),
+  },
+  enrollments: {
+    get: () => JSON.parse(localStorage.getItem('cufla_enrollments') || '[]') as Enrollment[],
+    set: (enrollments: Enrollment[]) => localStorage.setItem('cufla_enrollments', JSON.stringify(enrollments)),
+  },
+  attendances: {
+    get: () => JSON.parse(localStorage.getItem('cufla_attendances') || '[]') as Attendance[],
+    set: (attendances: Attendance[]) => localStorage.setItem('cufla_attendances', JSON.stringify(attendances)),
+  },
+  certificates: {
+    get: () => JSON.parse(localStorage.getItem('cufla_certificates') || '[]') as Certificate[],
+    set: (certificates: Certificate[]) => localStorage.setItem('cufla_certificates', JSON.stringify(certificates)),
+  },
+}
+
+// Inicializar eventos padrão
+if (StorageDB.events.get().length === 0) {
+  StorageDB.events.set([
+    { id: 'evt-1', title: 'React Native Avançado', description: 'Aprenda técnicas avançadas de React Native com exemplos práticos', location: 'Auditório Principal', time: '09:00', date: '2024-05-15', dateEnd: '2024-05-15', capacity: 50, enrolled: 0, category: 'Workshop' },
+    { id: 'evt-2', title: 'Web Development com TypeScript', description: 'Desenvolvimento web moderno usando TypeScript e React', location: 'Sala 201', time: '14:00', date: '2024-05-15', dateEnd: '2024-05-16', capacity: 40, enrolled: 0, category: 'Minicurso' },
+  ])
+}
+
+const validatePassword = (password: string): { valid: boolean; errors: string[] } => {
+  const errors: string[] = []
+  if (password.length < 8) errors.push('Mínimo 8 caracteres')
+  if (!/[A-Z]/.test(password)) errors.push('Pelo menos 1 letra maiúscula')
+  if (!/[a-z]/.test(password)) errors.push('Pelo menos 1 letra minúscula')
+  if (!/[!@#$%^&*]/.test(password)) errors.push('Pelo menos 1 caractere especial (!@#$%^&*)')
+  return { valid: errors.length === 0, errors }
+}
+
+function Toast({ toast, onClose }: { toast: Toast; onClose: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 4000)
+    return () => clearTimeout(timer)
+  }, [onClose])
+
+  const icons = { success: '', error: '', info: '' }
+  return (
+    <div className={`toast toast-${toast.type}`}>
+      <span className="toast-icon">{icons[toast.type]}</span>
+      <span className="toast-message">{toast.message}</span>
+    </div>
+  )
+}
+
+// LANDING PAGE - Redesenhada
+function LandingPage({ onLogin, onRegister, onAdmin }: { onLogin: () => void; onRegister: () => void; onAdmin: () => void }) {
+  return (
+    <div className="landing-page">
+      <nav className="landing-nav">
+        <div className="nav-container">
+          <img src={logo} alt="QuadCode" className="logo-img" />
+          <div className="nav-actions">
+            <button className="nav-btn nav-login" onClick={onLogin}>Login</button>
+            <button className="nav-btn nav-register" onClick={onRegister}>Registrar</button>
+          </div>
+        </div>
+      </nav>
+
+      <main className="landing-hero">
+        <div className="hero-content">
+          <div className="hero-text">
+            <h1>Congresso Unificado UFLA</h1>
+            <p className="hero-subtitle">Sistema completo de gerenciamento de eventos acadêmicos</p>
+            <p className="hero-description">Inscreva-se em eventos, acompanhe a programação em tempo real e receba seus certificados automaticamente.</p>
+            
+            <div className="hero-features">
+              <div className="feature-item">
+                <span className="feature-icon"></span>
+                <span>Programação Completa</span>
+              </div>
+              <div className="feature-item">
+                <span className="feature-icon"></span>
+                <span>Inscrições Rápidas</span>
+              </div>
+              <div className="feature-item">
+                <span className="feature-icon"></span>
+                <span>Certificados Automáticos</span>
+              </div>
+              <div className="feature-item">
+                <span className="feature-icon"></span>
+                <span>QR Code Seguro</span>
+              </div>
+            </div>
+
+            <div className="hero-actions">
+              <button className="btn btn-primary btn-lg" onClick={onRegister}>Fazer Inscrição</button>
+              <button className="btn btn-secondary btn-lg" onClick={onLogin}>Já tenho conta</button>
+            </div>
+          </div>
+
+          <div className="hero-image">
+            <div className="hero-graphic">
+              <div className="graphic-circle circle-1"></div>
+              <div className="graphic-circle circle-2"></div>
+              <img src={logo} alt="QuadCode Logo" className="hero-logo" />
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer className="landing-footer">
+        <button className="admin-link" onClick={onAdmin}>Acesso Administrativo</button>
+        <p>&copy; 2024 Congresso Unificado UFLA. Todos os direitos reservados.</p>
+      </footer>
+    </div>
+  )
+}
+
+// LOGIN
+function LoginScreen({ onBack, onLogin }: { onBack: () => void; onLogin: (user: User) => void }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+
+  const handleLogin = () => {
+    setError('')
+    if (!email || !password) {
+      setError('Preencha email e senha')
+      return
+    }
+
+    const user = StorageDB.users.get().find(u => u.email === email)
+    if (!user) {
+      setError('Usuário não encontrado')
+      return
+    }
+
+    if (user.password !== password) {
+      setError('Senha incorreta')
+      return
+    }
+
+    onLogin(user)
+  }
+
+  return (
+    <div className="auth-page">
+      <div className="auth-container">
+        <button className="back-btn" onClick={onBack}> Voltar</button>
+        <div className="auth-header">
+          <img src={logo} alt="QuadCode" className="auth-logo" />
+          <h2>Login</h2>
+        </div>
+        
+        {error && <div className="error-message">{error}</div>}
+        
+        <div className="form-group">
+          <label>Email</label>
+          <input type="email" placeholder="seu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} className="input" />
+        </div>
+        <div className="form-group">
+          <label>Senha</label>
+          <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} className="input" />
+        </div>
+        <button className="btn btn-primary" onClick={handleLogin} style={{ width: '100%' }}>Entrar</button>
+        
+        <div style={{ margin: '24px 0', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ flex: 1, height: '1px', background: '#E5E7EB' }}></div>
+          <span style={{ color: '#999', fontSize: '14px' }}>ou</span>
+          <div style={{ flex: 1, height: '1px', background: '#E5E7EB' }}></div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+          <button className="btn btn-outline" onClick={() => {
+            const user: User = {
+              id: 'user-' + Date.now(),
+              name: 'Usuário Google',
+              email: 'google@example.com',
+              cpf: '000.000.000-00',
+              institution: 'UFLA',
+              password: 'oauth-google',
+              enrolledEvents: [],
+            }
+            onLogin(user)
+          }} style={{ fontSize: '20px' }}>G</button>
+          <button className="btn btn-outline" onClick={() => {
+            const user: User = {
+              id: 'user-' + Date.now(),
+              name: 'Usuário Microsoft',
+              email: 'microsoft@example.com',
+              cpf: '000.000.000-00',
+              institution: 'UFLA',
+              password: 'oauth-microsoft',
+              enrolledEvents: [],
+            }
+            onLogin(user)
+          }} style={{ fontSize: '20px' }}>MS</button>
+          <button className="btn btn-outline" onClick={() => {
+            const user: User = {
+              id: 'user-' + Date.now(),
+              name: 'Usuário Apple',
+              email: 'apple@example.com',
+              cpf: '000.000.000-00',
+              institution: 'UFLA',
+              password: 'oauth-apple',
+              enrolledEvents: [],
+            }
+            onLogin(user)
+          }} style={{ fontSize: '20px' }}>A</button>
+        </div>
+
+        <p style={{ marginTop: '20px', textAlign: 'center', fontSize: '12px', color: '#666' }}>
+          Não tem conta? <button onClick={onBack} style={{ color: '#0066CC', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>Registre-se</button>
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// REGISTER
+function RegisterScreen({ onBack, onRegister, onShowToast }: { onBack: () => void; onRegister: (user: User) => void; onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void }) {
+  const [form, setForm] = useState({ name: '', email: '', cpf: '', institution: '', password: '', confirmPassword: '' })
+  const [error, setError] = useState('')
+  const [passwordErrors, setPasswordErrors] = useState<string[]>([])
+
+  const handlePasswordChange = (pwd: string) => {
+    setForm({ ...form, password: pwd })
+    const validation = validatePassword(pwd)
+    setPasswordErrors(validation.errors)
+  }
+
+  const handleRegister = () => {
+    setError('')
+
+    if (!form.name || !form.email || !form.cpf || !form.institution || !form.password) {
+      setError('Preencha todos os campos')
+      return
+    }
+
+    const validation = validatePassword(form.password)
+    if (!validation.valid) {
+      setError('Senha não atende aos requisitos')
+      return
+    }
+
+    if (form.password !== form.confirmPassword) {
+      setError('Senhas não conferem')
+      return
+    }
+
+    const userExists = StorageDB.users.get().find(u => u.email === form.email)
+    if (userExists) {
+      setError('Email já cadastrado')
+      return
+    }
+
+    const newUser: User = {
+      id: 'user-' + Date.now(),
+      name: form.name,
+      email: form.email,
+      cpf: form.cpf,
+      institution: form.institution,
+      password: form.password,
+      enrolledEvents: [],
+    }
+
+    const users = StorageDB.users.get()
+    users.push(newUser)
+    StorageDB.users.set(users)
+
+    onShowToast('Conta criada com sucesso!', 'success')
+    onRegister(newUser)
+  }
+
+  return (
+    <div className="auth-page">
+      <div className="auth-container">
+        <button className="back-btn" onClick={onBack}> Voltar</button>
+        <div className="auth-header">
+          <img src={logo} alt="QuadCode" className="auth-logo" />
+          <h2>Criar Conta</h2>
+        </div>
+        
+        {error && <div className="error-message">{error}</div>}
+        
+        <div className="form-group">
+          <label>Nome Completo</label>
+          <input type="text" placeholder="João Silva" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input" />
+        </div>
+        <div className="form-group">
+          <label>Email</label>
+          <input type="email" placeholder="seu@email.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input" />
+        </div>
+        <div className="form-group">
+          <label>CPF</label>
+          <input type="text" placeholder="000.000.000-00" value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} className="input" />
+        </div>
+        <div className="form-group">
+          <label>Instituição</label>
+          <input type="text" placeholder="UFLA" value={form.institution} onChange={(e) => setForm({ ...form, institution: e.target.value })} className="input" />
+        </div>
+        <div className="form-group">
+          <label>Senha</label>
+          <input type="password" placeholder="••••••••" value={form.password} onChange={(e) => handlePasswordChange(e.target.value)} className="input" />
+          {passwordErrors.length > 0 && (
+            <div className="password-requirements">
+              {passwordErrors.map((err, i) => (
+                <div key={i} className="requirement-error"> {err}</div>
+              ))}
+            </div>
+          )}
+          {form.password && passwordErrors.length === 0 && (
+            <div className="password-requirements">
+              <div className="requirement-success"> Senha forte</div>
+            </div>
+          )}
+        </div>
+        <div className="form-group">
+          <label>Confirmar Senha</label>
+          <input type="password" placeholder="••••••••" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} className="input" />
+        </div>
+        <button className="btn btn-primary" onClick={handleRegister} style={{ width: '100%' }}>Criar Conta</button>
+      </div>
+    </div>
+  )
+}
+
+// HOME SCREEN
+function HomeScreen({ user, onLogout, onNavigate }: { user: User; onLogout: () => void; onNavigate: (screen: Screen) => void }) {
+  const events = StorageDB.events.get()
+  const enrollments = StorageDB.enrollments.get().filter(e => e.userId === user.id)
+  const certificates = StorageDB.certificates.get().filter(c => c.userId === user.id)
+
+  return (
+    <div className="dashboard-layout">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <img src={logo} alt="QuadCode" className="sidebar-logo" />
+        </div>
+        <nav className="sidebar-nav">
+          <button className="nav-item active" onClick={() => onNavigate('home')}>
+            <span className="nav-icon"></span>
+            <span>Início</span>
+          </button>
+          <button className="nav-item" onClick={() => onNavigate('events')}>
+            <span className="nav-icon"></span>
+            <span>Programação</span>
+          </button>
+          <button className="nav-item" onClick={() => onNavigate('certificates')}>
+            <span className="nav-icon"></span>
+            <span>Inscrições</span>
+          </button>
+          <button className="nav-item" onClick={() => onNavigate('download-certificates')}>
+            <span className="nav-icon"></span>
+            <span>Certificados</span>
+          </button>
+          <button className="nav-item" onClick={() => onNavigate('profile')}>
+            <span className="nav-icon"></span>
+            <span>Perfil</span>
+          </button>
+        </nav>
+        <div className="sidebar-footer">
+          <button className="btn btn-outline" onClick={onLogout}>Sair</button>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        <header className="dashboard-header">
+          <h1>Bem-vindo, {user.name.split(' ')[0]}!</h1>
+          <p>Congresso Unificado UFLA Paraíso</p>
+        </header>
+
+        <div className="dashboard-grid">
+          <div className="stat-card">
+            <div className="stat-icon"></div>
+            <div className="stat-info">
+              <p className="stat-label">Eventos Disponíveis</p>
+              <p className="stat-value">{events.length}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon"></div>
+            <div className="stat-info">
+              <p className="stat-label">Minhas Inscrições</p>
+              <p className="stat-value">{enrollments.length}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon"></div>
+            <div className="stat-info">
+              <p className="stat-label">Certificados</p>
+              <p className="stat-value">{certificates.length}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon">🎓</div>
+            <div className="stat-info">
+              <p className="stat-label">Instituição</p>
+              <p className="stat-value">{user.institution}</p>
+            </div>
+          </div>
+        </div>
+
+        <section className="section">
+          <h2>Próximos Eventos</h2>
+          <div className="events-grid">
+            {events.slice(0, 3).map(event => (
+              <div key={event.id} className="event-card">
+                <div className="event-header">
+                  <span className="event-category">{event.category || 'Workshop'}</span>
+                  <span className="event-date">{event.date}</span>
+                </div>
+                <h3>{event.title}</h3>
+                <p className="event-description">{event.description}</p>
+                <div className="event-meta">
+                  <span> {event.location}</span>
+                  <span>⏱ {event.time}</span>
+                </div>
+                <div className="event-footer">
+                  <span className="event-capacity">{event.enrolled}/{event.capacity} inscritos</span>
+                  <button className="btn btn-primary btn-sm" onClick={() => onNavigate('events')}>Ver Mais</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
+    </div>
+  )
+}
+
+// EVENTS SCREEN
+function EventsScreen({ user, onBack, onShowToast }: { user: User; onBack: () => void; onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void }) {
+  const [events, setEvents] = useState(StorageDB.events.get())
+
+  const handleEnroll = async (event: Event) => {
+    if (user.enrolledEvents.includes(event.id)) {
+      onShowToast('Você já está inscrito neste evento', 'info')
+      return
+    }
+    const qrData = `CUFLA-${user.id}-${event.id}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
+    const qrCodeImage = await QRCode.toDataURL(qrData)
+    const enrollments = StorageDB.enrollments.get()
+    enrollments.push({ id: 'enr-' + Date.now(), userId: user.id, eventId: event.id, qrCode: qrData, qrCodeImage, enrollmentDate: new Date().toISOString(), used: false })
+    StorageDB.enrollments.set(enrollments)
+    user.enrolledEvents.push(event.id)
+    const users = StorageDB.users.get()
+    const userIndex = users.findIndex(u => u.id === user.id)
+    if (userIndex !== -1) {
+      users[userIndex] = user
+      StorageDB.users.set(users)
+    }
+    event.enrolled++
+    const updatedEvents = events.map(e => e.id === event.id ? event : e)
+    setEvents(updatedEvents)
+    StorageDB.events.set(updatedEvents)
+    onShowToast('Inscrição realizada com sucesso! QR Code gerado.', 'success')
+  }
+
+  return (
+    <div className="dashboard-layout">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <img src={logo} alt="QuadCode" className="sidebar-logo" />
+        </div>
+        <nav className="sidebar-nav">
+          <button className="nav-item" onClick={onBack}>
+            <span className="nav-icon"></span>
+            <span>Início</span>
+          </button>
+          <button className="nav-item active" onClick={() => {}}>
+            <span className="nav-icon"></span>
+            <span>Programação</span>
+          </button>
+          <button className="nav-item" onClick={() => {}}>
+            <span className="nav-icon"></span>
+            <span>Inscrições</span>
+          </button>
+          <button className="nav-item" onClick={() => {}}>
+            <span className="nav-icon"></span>
+            <span>Certificados</span>
+          </button>
+          <button className="nav-item" onClick={() => {}}>
+            <span className="nav-icon"></span>
+            <span>Perfil</span>
+          </button>
+        </nav>
+      </aside>
+
+      <main className="main-content">
+        <header className="dashboard-header">
+          <h1>Programação do Evento</h1>
+          <p>Confira todos os eventos disponíveis e faça sua inscrição</p>
+        </header>
+
+        <div className="events-list">
+          {events.map(event => (
+            <div key={event.id} className="event-list-item">
+              <div className="event-time">
+                <strong>{event.time}</strong>
+                <span>{event.date}</span>
+              </div>
+              <div className="event-details">
+                <h3>{event.title}</h3>
+                <p>{event.description}</p>
+                <div className="event-meta">
+                  <span> {event.location}</span>
+                  <span> {event.enrolled}/{event.capacity}</span>
+                </div>
+              </div>
+              <button 
+                className={`btn ${user.enrolledEvents.includes(event.id) ? 'btn-outline' : 'btn-primary'} btn-sm`}
+                onClick={() => handleEnroll(event)}
+                disabled={user.enrolledEvents.includes(event.id)}
+              >
+                {user.enrolledEvents.includes(event.id) ? 'Inscrito' : 'Inscrever'}
+              </button>
+            </div>
+          ))}
+        </div>
+      </main>
+    </div>
+  )
+}
+
+// CERTIFICATES SCREEN
+function CertificatesScreen({ user, onBack, onShowToast }: { user: User; onBack: () => void; onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void }) {
+  const enrollments = StorageDB.enrollments.get().filter(e => e.userId === user.id)
+  const events = StorageDB.events.get()
+  const unusedEnrollments = enrollments.filter(e => !e.used)
+
+  const downloadQRCode = (enrollment: Enrollment) => {
+    const link = document.createElement('a')
+    link.href = enrollment.qrCodeImage
+    link.download = `qrcode-${enrollment.id}.png`
+    link.click()
+    onShowToast('QR Code baixado!', 'success')
+  }
+
+  return (
+    <div className="dashboard-layout">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <img src={logo} alt="QuadCode" className="sidebar-logo" />
+        </div>
+        <nav className="sidebar-nav">
+          <button className="nav-item" onClick={onBack}>
+            <span className="nav-icon"></span>
+            <span>Início</span>
+          </button>
+          <button className="nav-item active" onClick={() => {}}>
+            <span className="nav-icon"></span>
+            <span>Inscrições</span>
+          </button>
+        </nav>
+      </aside>
+
+      <main className="main-content">
+        <header className="dashboard-header">
+          <h1>Meus QR Codes</h1>
+          <p>Guarde seus QR Codes para confirmar presença</p>
+        </header>
+
+        {unusedEnrollments.length === 0 ? (
+          <div className="empty-state">
+            <p>Você ainda não possui QR Codes disponíveis.</p>
+            <p>Faça sua inscrição na programação para gerar o QR Code.</p>
+          </div>
+        ) : (
+          <div className="qr-list">
+            {unusedEnrollments.map(enrollment => {
+              const event = events.find(e => e.id === enrollment.eventId)
+              return (
+                <div key={enrollment.id} className="qr-card">
+                  <div className="qr-content">
+                    <h3>{event?.title}</h3>
+                    <p>{event?.location} • {event?.date}</p>
+                  </div>
+                  <div className="qr-preview">
+                    <img src={enrollment.qrCodeImage} alt="QR Code" />
+                  </div>
+                  <div className="qr-code-text" style={{ fontSize: "12px", fontWeight: "bold", color: "#666", marginTop: "8px", letterSpacing: "1px" }}>{enrollment.qrCode}</div>
+                  <button className="btn btn-primary btn-sm" onClick={() => downloadQRCode(enrollment)}>Baixar QR</button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </main>
+    </div>
+  )
+}
+
+// DOWNLOAD CERTIFICATES SCREEN
+function DownloadCertificatesScreen({ user, onBack, onShowToast }: { user: User; onBack: () => void; onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void }) {
+  const certificates = StorageDB.certificates.get().filter(c => c.userId === user.id)
+
+  const downloadCertificate = async (cert: Certificate) => {
+    if (cert.certificateImage) {
+      const link = document.createElement('a')
+      link.href = cert.certificateImage
+      link.download = `certificado-${cert.id}.png`
+      link.click()
+      onShowToast('Certificado baixado!', 'success')
+    } else {
+      onShowToast('Certificado não disponível', 'error')
+    }
+  }
+
+  return (
+    <div className="dashboard-layout">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <img src={logo} alt="QuadCode" className="sidebar-logo" />
+        </div>
+        <nav className="sidebar-nav">
+          <button className="nav-item" onClick={onBack}>
+            <span className="nav-icon"></span>
+            <span>Início</span>
+          </button>
+          <button className="nav-item active" onClick={() => {}}>
+            <span className="nav-icon"></span>
+            <span>Certificados</span>
+          </button>
+        </nav>
+      </aside>
+
+      <main className="main-content">
+        <header className="dashboard-header">
+          <h1>Meus Certificados</h1>
+          <p>Consulte e baixe seus certificados emitidos</p>
+        </header>
+
+        {certificates.length === 0 ? (
+          <div className="empty-state">
+            <p>Você ainda não possui certificados.</p>
+            <p>Confirme presença nos eventos para habilitar a emissão.</p>
+          </div>
+        ) : (
+          <div className="certificates-list">
+            {certificates.map(cert => (
+              <div key={cert.id} className="certificate-card">
+                <div className="cert-content">
+                  <h3>{cert.eventTitle}</h3>
+                  <p>Emissão: {cert.issueDate}</p>
+                  <span className={`badge badge-${cert.status}`}>{cert.status === 'sent' ? 'Enviado' : 'Pendente'}</span>
+                </div>
+                <button className="btn btn-primary btn-sm" onClick={() => downloadCertificate(cert)}>Baixar</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+    </div>
+  )
+}
+
+// PROFILE SCREEN
+function ProfileScreen({ user, onBack, onUpdateUser, onShowToast }: { user: User; onBack: () => void; onUpdateUser: (user: User) => void; onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void }) {
+  const [form, setForm] = useState(user)
+
+  const handleSave = () => {
+    const users = StorageDB.users.get()
+    const userIndex = users.findIndex(u => u.id === user.id)
+    if (userIndex !== -1) {
+      users[userIndex] = form
+      StorageDB.users.set(users)
+      onUpdateUser(form)
+      onShowToast('Perfil atualizado com sucesso!', 'success')
+      onBack()
+    }
+  }
+
+  return (
+    <div className="dashboard-layout">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <img src={logo} alt="QuadCode" className="sidebar-logo" />
+        </div>
+        <nav className="sidebar-nav">
+          <button className="nav-item" onClick={onBack}>
+            <span className="nav-icon"></span>
+            <span>Início</span>
+          </button>
+          <button className="nav-item active" onClick={() => {}}>
+            <span className="nav-icon"></span>
+            <span>Perfil</span>
+          </button>
+        </nav>
+      </aside>
+
+      <main className="main-content">
+        <header className="dashboard-header">
+          <h1>Meu Perfil</h1>
+          <p>Atualize suas informações pessoais</p>
+        </header>
+
+        <div className="profile-form">
+          <div className="form-group">
+            <label>Nome</label>
+            <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input" />
+          </div>
+          <div className="form-group">
+            <label>Email</label>
+            <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input" />
+          </div>
+          <div className="form-group">
+            <label>CPF</label>
+            <input type="text" value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} className="input" />
+          </div>
+          <div className="form-group">
+            <label>Instituição</label>
+            <input type="text" value={form.institution} onChange={(e) => setForm({ ...form, institution: e.target.value })} className="input" />
+          </div>
+          <div className="form-actions">
+            <button className="btn btn-primary" onClick={handleSave}>Salvar Alterações</button>
+            <button className="btn btn-outline" onClick={onBack}>Cancelar</button>
+          </div>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+// ADMIN LOGIN
+function AdminLoginScreen({ onBack, onLogin }: { onBack: () => void; onLogin: () => void }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+
+  const handleLogin = () => {
+    setError('')
+    if (email === 'admin@ufla.br' && password === 'Admin123!') {
+      onLogin()
+    } else {
+      setError('Credenciais inválidas')
+    }
+  }
+
+  return (
+    <div className="auth-page">
+      <div className="auth-container">
+        <button className="back-btn" onClick={onBack}> Voltar</button>
+        <div className="auth-header">
+          <img src={logo} alt="QuadCode" className="auth-logo" />
+          <h2>Painel Administrativo</h2>
+        </div>
+        
+        {error && <div className="error-message">{error}</div>}
+        
+        <div className="form-group">
+          <label>Email</label>
+          <input type="email" placeholder="admin@ufla.br" value={email} onChange={(e) => setEmail(e.target.value)} className="input" />
+        </div>
+        <div className="form-group">
+          <label>Senha</label>
+          <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} className="input" />
+        </div>
+        <button className="btn btn-primary" onClick={handleLogin} style={{ width: '100%' }}>Entrar</button>
+        <p style={{ marginTop: '16px', fontSize: '12px', color: '#666', textAlign: 'center' }}>
+          Demo: admin@ufla.br / Admin123!
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ADMIN HOME
+function AdminHomeScreen({ onLogout, onNavigate }: { onLogout: () => void; onNavigate: (screen: Screen) => void }) {
+  const events = StorageDB.events.get()
+  const users = StorageDB.users.get()
+  const enrollments = StorageDB.enrollments.get()
+  const certificates = StorageDB.certificates.get()
+  const attendances = StorageDB.attendances.get()
+
+  return (
+    <div className="admin-layout">
+      <aside className="admin-sidebar">
+        <div className="admin-header">
+          <img src={logo} alt="QuadCode" className="admin-logo" />
+          <h2>Admin</h2>
+        </div>
+        <nav className="admin-nav">
+          <button className="admin-nav-item active" onClick={() => {}}>
+            <span></span> Dashboard
+          </button>
+          <button className="admin-nav-item" onClick={() => onNavigate('admin-events')}>
+            <span></span> Eventos
+          </button>
+          <button className="admin-nav-item" onClick={() => onNavigate('admin-qr')}>
+            <span></span> Presença
+          </button>
+          <button className="admin-nav-item" onClick={() => onNavigate('admin-certificates')}>
+            <span></span> Certificados
+          </button>
+          <button className="admin-nav-item" onClick={() => onNavigate('admin-reports')}>
+            <span></span> Relatórios
+          </button>
+        </nav>
+        <button className="btn btn-outline" onClick={onLogout} style={{ width: '100%', marginTop: 'auto' }}>Sair</button>
+      </aside>
+
+      <main className="admin-main">
+        <header className="admin-header-top">
+          <h1>Dashboard Administrativo</h1>
+          <p>Gerencie eventos, presenças e certificados</p>
+        </header>
+
+        <div className="admin-stats-grid">
+          <div className="admin-stat-card">
+            <div className="stat-icon"></div>
+            <div className="stat-data">
+              <p className="stat-label">Eventos</p>
+              <p className="stat-value">{events.length}</p>
+            </div>
+          </div>
+          <div className="admin-stat-card">
+            <div className="stat-icon"></div>
+            <div className="stat-data">
+              <p className="stat-label">Usuários</p>
+              <p className="stat-value">{users.length}</p>
+            </div>
+          </div>
+          <div className="admin-stat-card">
+            <div className="stat-icon"></div>
+            <div className="stat-data">
+              <p className="stat-label">Inscrições</p>
+              <p className="stat-value">{enrollments.length}</p>
+            </div>
+          </div>
+          <div className="admin-stat-card">
+            <div className="stat-icon"></div>
+            <div className="stat-data">
+              <p className="stat-label">Presenças</p>
+              <p className="stat-value">{attendances.length}</p>
+            </div>
+          </div>
+          <div className="admin-stat-card">
+            <div className="stat-icon"></div>
+            <div className="stat-data">
+              <p className="stat-label">Certificados</p>
+              <p className="stat-value">{certificates.length}</p>
+            </div>
+          </div>
+          <div className="admin-stat-card">
+            <div className="stat-icon"></div>
+            <div className="stat-data">
+              <p className="stat-label">Taxa Inscrição</p>
+              <p className="stat-value">{events.length > 0 ? Math.round((enrollments.length / (events.length * 50)) * 100) : 0}%</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="admin-actions">
+          <button className="btn btn-primary" onClick={() => onNavigate('admin-events')}>
+            <span></span> Novo Evento
+          </button>
+          <button className="btn btn-secondary" onClick={() => onNavigate('admin-qr')}>
+            <span></span> Registrar Presença
+          </button>
+          <button className="btn btn-secondary" onClick={() => onNavigate('admin-certificates')}>
+            <span></span> Gerar Certificados
+          </button>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+// ADMIN EVENTS
+function AdminEventsScreen({ onBack, onShowToast }: { onBack: () => void; onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void }) {
+  const [events, setEvents] = useState(StorageDB.events.get())
+  const [showModal, setShowModal] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [form, setForm] = useState({ title: '', description: '', location: '', time: '', date: '', dateEnd: '', capacity: 50, category: '', templateImage: '', signatureImage: '', nameColor: '#0066CC' })
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const signatureInputRef = useRef<HTMLInputElement>(null)
+
+  const handleTemplateUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        setForm({ ...form, templateImage: event.target?.result as string })
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        setForm({ ...form, signatureImage: event.target?.result as string })
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleSave = () => {
+    if (!form.title || !form.location || !form.date || !form.dateEnd || !form.time) {
+      onShowToast('Preencha todos os campos obrigatórios', 'error')
+      return
+    }
+
+    if (editingId) {
+      const updatedEvents = events.map(e => 
+        e.id === editingId 
+          ? { ...e, title: form.title, description: form.description, location: form.location, time: form.time, date: form.date, dateEnd: form.dateEnd, capacity: form.capacity, category: form.category, templateImage: form.templateImage, signatureImage: form.signatureImage, nameColor: form.nameColor }
+          : e
+      )
+      setEvents(updatedEvents)
+      StorageDB.events.set(updatedEvents)
+      onShowToast('Evento atualizado!', 'success')
+    } else {
+      const newEvent: Event = {
+        id: 'evt-' + Date.now(),
+        title: form.title,
+        description: form.description,
+        location: form.location,
+        time: form.time,
+        date: form.date,
+        dateEnd: form.dateEnd,
+        capacity: form.capacity,
+        enrolled: 0,
+        category: form.category,
+        templateImage: form.templateImage,
+        signatureImage: form.signatureImage,
+        nameColor: form.nameColor,
+      }
+      const updatedEvents = [...events, newEvent]
+      setEvents(updatedEvents)
+      StorageDB.events.set(updatedEvents)
+      onShowToast('Evento criado!', 'success')
+    }
+
+    setShowModal(false)
+    setEditingId(null)
+    setForm({ title: '', description: '', location: '', time: '', date: '', dateEnd: '', capacity: 50, category: '', templateImage: '', signatureImage: '', nameColor: '#0066CC' })
+  }
+
+  const handleDelete = (id: string) => {
+    if (confirm('Tem certeza que deseja deletar este evento?')) {
+      const updatedEvents = events.filter(e => e.id !== id)
+      setEvents(updatedEvents)
+      StorageDB.events.set(updatedEvents)
+      onShowToast('Evento deletado!', 'success')
+    }
+  }
+
+  return (
+    <div className="admin-layout">
+      <aside className="admin-sidebar">
+        <div className="admin-header">
+          <img src={logo} alt="QuadCode" className="admin-logo" />
+          <h2>Admin</h2>
+        </div>
+        <nav className="admin-nav">
+          <button className="admin-nav-item" onClick={onBack}>
+            <span></span> Dashboard
+          </button>
+          <button className="admin-nav-item active" onClick={() => {}}>
+            <span></span> Eventos
+          </button>
+          <button className="admin-nav-item" onClick={() => {}}>
+            <span></span> Presença
+          </button>
+          <button className="admin-nav-item" onClick={() => {}}>
+            <span></span> Certificados
+          </button>
+          <button className="admin-nav-item" onClick={() => {}}>
+            <span></span> Relatórios
+          </button>
+        </nav>
+      </aside>
+
+      <main className="admin-main">
+        <header className="admin-header-top">
+          <h1>Gerenciar Eventos</h1>
+          <button className="btn btn-primary" onClick={() => { setShowModal(true); setEditingId(null); setForm({ title: '', description: '', location: '', time: '', date: '', dateEnd: '', capacity: 50, category: '', templateImage: '', signatureImage: '', nameColor: '#0066CC' }) }}>
+             Novo Evento
+          </button>
+        </header>
+
+        <div className="events-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Evento</th>
+                <th>Data</th>
+                <th>Local</th>
+                <th>Inscritos</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {events.map(event => (
+                <tr key={event.id}>
+                  <td><strong>{event.title}</strong></td>
+                  <td>{event.date}</td>
+                  <td>{event.location}</td>
+                  <td>{event.enrolled}/{event.capacity}</td>
+                  <td>
+                    <button className="btn btn-sm btn-outline" onClick={() => { setEditingId(event.id); setForm(event); setShowModal(true) }}>Editar</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => handleDelete(event.id)}>Deletar</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {showModal && (
+          <div className="modal-overlay" onClick={() => setShowModal(false)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <h2>{editingId ? 'Editar Evento' : 'Novo Evento'}</h2>
+              <div className="modal-form">
+                <div className="form-group">
+                  <label>Título *</label>
+                  <input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="input" />
+                </div>
+                <div className="form-group">
+                  <label>Descrição</label>
+                  <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="input" rows={3}></textarea>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Local *</label>
+                    <input type="text" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="input" />
+                  </div>
+                  <div className="form-group">
+                    <label>Categoria</label>
+                    <input type="text" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="input" placeholder="Workshop, Palestra, etc" />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Data Início *</label>
+                    <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="input" />
+                  </div>
+                  <div className="form-group">
+                    <label>Data Fim *</label>
+                    <input type="date" value={form.dateEnd} onChange={(e) => setForm({ ...form, dateEnd: e.target.value })} className="input" />
+                  </div>
+                  <div className="form-group">
+                    <label>Horário *</label>
+                    <input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} className="input" />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Capacidade</label>
+                  <input type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: parseInt(e.target.value) })} className="input" />
+                </div>
+                <div className="form-group">
+                  <label>Modelo de Certificado</label>
+                  <button className="btn btn-outline btn-sm" onClick={() => fileInputRef.current?.click()}>
+                    Selecionar Imagem
+                  </button>
+                  <input ref={fileInputRef} type="file" accept="image/*" onChange={handleTemplateUpload} style={{ display: 'none' }} />
+                  {form.templateImage && (
+                    <div style={{ marginTop: '12px' }}>
+                      <img src={form.templateImage} alt="Template" style={{ maxWidth: '100%', maxHeight: '150px', borderRadius: '8px' }} />
+                    </div>
+                  )}
+                </div>
+                <div className="form-group">
+                  <label>Assinatura do Responsável</label>
+                  <button className="btn btn-outline btn-sm" onClick={() => signatureInputRef.current?.click()}>
+                    Selecionar Assinatura
+                  </button>
+                  <input ref={signatureInputRef} type="file" accept="image/png" onChange={handleSignatureUpload} style={{ display: 'none' }} />
+                  {form.signatureImage && (
+                    <div style={{ marginTop: '12px' }}>
+                      <img src={form.signatureImage} alt="Assinatura" style={{ maxWidth: '100%', maxHeight: '80px', borderRadius: '8px' }} />
+                    </div>
+                  )}
+                </div>
+                <div className="form-group">
+                  <label>Cor do Nome no Certificado</label>
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                    <input type="color" value={form.nameColor || '#0066CC'} onChange={(e) => setForm({ ...form, nameColor: e.target.value })} style={{ width: '60px', height: '40px', border: 'none', borderRadius: '8px', cursor: 'pointer' }} />
+                    <input type="text" value={form.nameColor || '#0066CC'} onChange={(e) => setForm({ ...form, nameColor: e.target.value })} placeholder="#0066CC" className="input" style={{ flex: 1 }} />
+                  </div>
+                </div>
+                <div className="modal-buttons">
+                  <button className="btn btn-primary" onClick={handleSave}>Salvar</button>
+                  <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancelar</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  )
+}
+
+// ADMIN QR
+function AdminQRScreen({ onBack, onShowToast }: { onBack: () => void; onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void }) {
+  const [qrInput, setQrInput] = useState('')
+  const [attendances, setAttendances] = useState<{ qr: string; time: string; event: string; user: string }[]>([])
+  const enrollments = StorageDB.enrollments.get()
+  const events = StorageDB.events.get()
+  const users = StorageDB.users.get()
+
+  const handleQRRead = () => {
+    if (!qrInput) {
+      onShowToast('Digite ou escaneie um QR Code', 'error')
+      return
+    }
+
+    const enrollment = enrollments.find(e => e.qrCode === qrInput)
+    if (!enrollment) {
+      onShowToast('QR Code inválido ou não encontrado', 'error')
+      return
+    }
+
+    if (enrollment.used) {
+      onShowToast('Este QR Code já foi utilizado', 'error')
+      return
+    }
+
+    const event = events.find(e => e.id === enrollment.eventId)
+    const user = users.find(u => u.id === enrollment.userId)
+    
+    const updatedEnrollments = enrollments.map(e => 
+      e.id === enrollment.id ? { ...e, used: true } : e
+    )
+    StorageDB.enrollments.set(updatedEnrollments)
+
+    const attendancesList = StorageDB.attendances.get()
+    attendancesList.push({
+      id: 'att-' + Date.now(),
+      userId: enrollment.userId,
+      eventId: enrollment.eventId,
+      attendanceDate: new Date().toISOString(),
+    })
+    StorageDB.attendances.set(attendancesList)
+
+    setAttendances([...attendances, { 
+      qr: qrInput, 
+      time: new Date().toLocaleTimeString(), 
+      event: event?.title || 'Evento desconhecido',
+      user: user?.name || 'Usuário desconhecido'
+    }])
+    setQrInput('')
+    onShowToast('Presença registrada com sucesso!', 'success')
+  }
+
+  return (
+    <div className="admin-layout">
+      <aside className="admin-sidebar">
+        <div className="admin-header">
+          <img src={logo} alt="QuadCode" className="admin-logo" />
+          <h2>Admin</h2>
+        </div>
+        <nav className="admin-nav">
+          <button className="admin-nav-item" onClick={onBack}>
+            <span></span> Dashboard
+          </button>
+          <button className="admin-nav-item" onClick={() => {}}>
+            <span></span> Eventos
+          </button>
+          <button className="admin-nav-item active" onClick={() => {}}>
+            <span></span> Presença
+          </button>
+          <button className="admin-nav-item" onClick={() => {}}>
+            <span></span> Certificados
+          </button>
+          <button className="admin-nav-item" onClick={() => {}}>
+            <span></span> Relatórios
+          </button>
+        </nav>
+      </aside>
+
+      <main className="admin-main">
+        <header className="admin-header-top">
+          <h1>Registrar Presença</h1>
+          <p>Escaneie ou digite o QR Code para registrar presença</p>
+        </header>
+
+        <div className="qr-section">
+          <div className="form-group">
+            <label>Digite o código QR ou número</label>
+            <input 
+              type="text" 
+              placeholder="Cole o QR Code ou digite o número" 
+              value={qrInput} 
+              onChange={(e) => setQrInput(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleQRRead()}
+              className="input"
+            />
+          </div>
+          <button className="btn btn-primary" onClick={handleQRRead}>Registrar Presença</button>
+        </div>
+
+        <div className="attendances-table">
+          <h2>Presenças Registradas</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Participante</th>
+                <th>Evento</th>
+                <th>Horário</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attendances.length === 0 ? (
+                <tr><td colSpan={3} style={{ textAlign: 'center', color: '#999' }}>Nenhuma presença registrada</td></tr>
+              ) : (
+                attendances.map((att, idx) => (
+                  <tr key={idx}>
+                    <td>{att.user}</td>
+                    <td>{att.event}</td>
+                    <td>{att.time}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+// ADMIN CERTIFICATES
+function AdminCertificatesScreen({ onBack, onShowToast }: { onBack: () => void; onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void }) {
+  const users = StorageDB.users.get()
+  const events = StorageDB.events.get()
+  const attendances = StorageDB.attendances.get()
+  const [selectedEvent, setSelectedEvent] = useState('')
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+
+  const getAttendedUsers = () => {
+    if (!selectedEvent) return []
+    return attendances
+      .filter(a => a.eventId === selectedEvent)
+      .map(a => users.find(u => u.id === a.userId))
+      .filter(Boolean) as User[]
+  }
+
+  const generateCertificate = async (user: User) => {
+    const event = events.find(e => e.id === selectedEvent)
+    if (!event || !event.templateImage) {
+      onShowToast('Evento ou template não encontrado', 'error')
+      return
+    }
+
+    try {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = 1200
+        canvas.height = 800
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+
+        ctx.drawImage(img, 0, 0, 1200, 800)
+        ctx.font = 'italic 70px Georgia'
+        ctx.fillStyle = event.nameColor || '#0066CC'
+        ctx.textAlign = 'center'
+        ctx.fillText(user.name, 600, 320)
+
+        if (event.signatureImage) {
+          const sig = new Image()
+          sig.crossOrigin = 'anonymous'
+          sig.onload = () => {
+            ctx.drawImage(sig, 900, 650, 200, 80)
+            finalizeCertificate(canvas.toDataURL('image/png'))
+          }
+          sig.onerror = () => finalizeCertificate(canvas.toDataURL('image/png'))
+          sig.src = event.signatureImage
+        } else {
+          finalizeCertificate(canvas.toDataURL('image/png'))
+        }
+      }
+      img.onerror = () => {
+        onShowToast('Erro ao carregar template', 'error')
+      }
+      img.src = event.templateImage
+
+      const finalizeCertificate = (certificateImage: string) => {
+        const certificates = StorageDB.certificates.get()
+        certificates.push({
+          id: 'cert-' + Date.now() + Math.random(),
+          userId: user.id,
+          userName: user.name,
+          eventId: selectedEvent,
+          eventTitle: event.title,
+          issueDate: selectedDate,
+          status: 'sent',
+          certificateImage,
+        })
+        StorageDB.certificates.set(certificates)
+        onShowToast(`Certificado gerado para ${user.name}!`, 'success')
+      }
+    } catch (err) {
+      onShowToast('Erro ao gerar certificado', 'error')
+    }
+  }
+
+  const attendedUsers = getAttendedUsers()
+
+  return (
+    <div className="admin-layout">
+      <aside className="admin-sidebar">
+        <div className="admin-header">
+          <img src={logo} alt="QuadCode" className="admin-logo" />
+          <h2>Admin</h2>
+        </div>
+        <nav className="admin-nav">
+          <button className="admin-nav-item" onClick={onBack}>
+            <span></span> Dashboard
+          </button>
+          <button className="admin-nav-item" onClick={() => {}}>
+            <span></span> Eventos
+          </button>
+          <button className="admin-nav-item" onClick={() => {}}>
+            <span></span> Presença
+          </button>
+          <button className="admin-nav-item active" onClick={() => {}}>
+            <span></span> Certificados
+          </button>
+          <button className="admin-nav-item" onClick={() => {}}>
+            <span></span> Relatórios
+          </button>
+        </nav>
+      </aside>
+
+      <main className="admin-main">
+        <header className="admin-header-top">
+          <h1>Gerar Certificados</h1>
+          <p>Selecione um evento e gere certificados para os participantes</p>
+        </header>
+
+        <div className="certificate-generator">
+          <div className="form-row">
+            <div className="form-group">
+              <label>Selecione o Evento *</label>
+              <select value={selectedEvent} onChange={(e) => setSelectedEvent(e.target.value)} className="input">
+                <option value="">-- Escolha um evento --</option>
+                {events.map(event => (
+                  <option key={event.id} value={event.id}>{event.title}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Data de Emissão</label>
+              <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="input" />
+            </div>
+          </div>
+        </div>
+
+        {selectedEvent && (
+          <div className="certificates-list">
+            <h2>Participantes com Presença Confirmada</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>Email</th>
+                  <th>Ação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {attendedUsers.length === 0 ? (
+                  <tr><td colSpan={3} style={{ textAlign: 'center', color: '#999' }}>Nenhum participante com presença confirmada</td></tr>
+                ) : (
+                  attendedUsers.map(user => (
+                    <tr key={user.id}>
+                      <td>{user.name}</td>
+                      <td>{user.email}</td>
+                      <td>
+                        <button className="btn btn-primary btn-sm" onClick={() => generateCertificate(user)}>
+                          Gerar
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </main>
+    </div>
+  )
+}
+
+// ADMIN REPORTS
+function AdminReportsScreen({ onBack }: { onBack: () => void }) {
+  const events = StorageDB.events.get()
+  const users = StorageDB.users.get()
+  const enrollments = StorageDB.enrollments.get()
+  const attendances = StorageDB.attendances.get()
+  const certificates = StorageDB.certificates.get()
+
+  return (
+    <div className="admin-layout">
+      <aside className="admin-sidebar">
+        <div className="admin-header">
+          <img src={logo} alt="QuadCode" className="admin-logo" />
+          <h2>Admin</h2>
+        </div>
+        <nav className="admin-nav">
+          <button className="admin-nav-item" onClick={onBack}>
+            <span></span> Dashboard
+          </button>
+          <button className="admin-nav-item" onClick={() => {}}>
+            <span></span> Eventos
+          </button>
+          <button className="admin-nav-item" onClick={() => {}}>
+            <span></span> Presença
+          </button>
+          <button className="admin-nav-item" onClick={() => {}}>
+            <span></span> Certificados
+          </button>
+          <button className="admin-nav-item active" onClick={() => {}}>
+            <span></span> Relatórios
+          </button>
+        </nav>
+      </aside>
+
+      <main className="admin-main">
+        <header className="admin-header-top">
+          <h1>Relatórios</h1>
+          <p>Visualize estatísticas e métricas do sistema</p>
+        </header>
+
+        <div className="reports-grid">
+          <div className="report-card">
+            <h3>Resumo Geral</h3>
+            <div className="report-item">
+              <span>Total de Eventos:</span>
+              <strong>{events.length}</strong>
+            </div>
+            <div className="report-item">
+              <span>Total de Usuários:</span>
+              <strong>{users.length}</strong>
+            </div>
+            <div className="report-item">
+              <span>Total de Inscrições:</span>
+              <strong>{enrollments.length}</strong>
+            </div>
+            <div className="report-item">
+              <span>Total de Presenças:</span>
+              <strong>{attendances.length}</strong>
+            </div>
+            <div className="report-item">
+              <span>Total de Certificados:</span>
+              <strong>{certificates.length}</strong>
+            </div>
+          </div>
+
+          <div className="report-card">
+            <h3>Taxa de Participação</h3>
+            {events.map(event => (
+              <div key={event.id} className="report-item">
+                <span>{event.title}:</span>
+                <strong>{event.enrolled}/{event.capacity} ({Math.round((event.enrolled / event.capacity) * 100)}%)</strong>
+              </div>
+            ))}
+          </div>
+
+          <div className="report-card">
+            <h3>Taxa de Presença</h3>
+            {events.map(event => {
+              const eventEnrollments = enrollments.filter(e => e.eventId === event.id)
+              const eventAttendances = attendances.filter(a => a.eventId === event.id)
+              const rate = eventEnrollments.length > 0 ? Math.round((eventAttendances.length / eventEnrollments.length) * 100) : 0
+              return (
+                <div key={event.id} className="report-item">
+                  <span>{event.title}:</span>
+                  <strong>{eventAttendances.length}/{eventEnrollments.length} ({rate}%)</strong>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="report-card">
+            <h3>Certificados Emitidos</h3>
+            {events.map(event => {
+              const eventCerts = certificates.filter(c => c.eventId === event.id)
+              return (
+                <div key={event.id} className="report-item">
+                  <span>{event.title}:</span>
+                  <strong>{eventCerts.length}</strong>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+// MAIN APP
+export default function App() {
+  const [screen, setScreen] = useState<Screen>('landing')
+  const [user, setUser] = useState<User | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [toasts, setToasts] = useState<Toast[]>([])
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+    const id = Date.now().toString()
+    setToasts(prev => [...prev, { id, message, type }])
+  }
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const custom = event as CustomEvent<Screen>
+      setScreen(custom.detail)
+    }
+    window.addEventListener('navigate-screen', handler as EventListener)
+    return () => window.removeEventListener('navigate-screen', handler as EventListener)
+  }, [])
+
+  return (
+    <div className="app">
+      {screen === 'landing' && <LandingPage onLogin={() => setScreen('login')} onRegister={() => setScreen('register')} onAdmin={() => setScreen('admin-login')} />}
+      {screen === 'login' && <LoginScreen onBack={() => setScreen('landing')} onLogin={(u) => { setUser(u); setScreen('home') }} />}
+      {screen === 'register' && <RegisterScreen onBack={() => setScreen('landing')} onRegister={(u) => { setUser(u); setScreen('home') }} onShowToast={showToast} />}
+      {screen === 'home' && user && <HomeScreen user={user} onLogout={() => { setUser(null); setScreen('landing') }} onNavigate={setScreen} />}
+      {screen === 'events' && user && <EventsScreen user={user} onBack={() => setScreen('home')} onShowToast={showToast} />}
+      {screen === 'certificates' && user && <CertificatesScreen user={user} onBack={() => setScreen('home')} onShowToast={showToast} />}
+      {screen === 'download-certificates' && user && <DownloadCertificatesScreen user={user} onBack={() => setScreen('home')} onShowToast={showToast} />}
+      {screen === 'profile' && user && <ProfileScreen user={user} onBack={() => setScreen('home')} onUpdateUser={setUser} onShowToast={showToast} />}
+      {screen === 'admin-login' && <AdminLoginScreen onBack={() => setScreen('landing')} onLogin={() => { setIsAdmin(true); setScreen('admin-home') }} />}
+      {screen === 'admin-home' && isAdmin && <AdminHomeScreen onLogout={() => { setIsAdmin(false); setScreen('landing') }} onNavigate={setScreen} />}
+      {screen === 'admin-events' && isAdmin && <AdminEventsScreen onBack={() => setScreen('admin-home')} onShowToast={showToast} />}
+      {screen === 'admin-qr' && isAdmin && <AdminQRScreen onBack={() => setScreen('admin-home')} onShowToast={showToast} />}
+      {screen === 'admin-certificates' && isAdmin && <AdminCertificatesScreen onBack={() => setScreen('admin-home')} onShowToast={showToast} />}
+      {screen === 'admin-reports' && isAdmin && <AdminReportsScreen onBack={() => setScreen('admin-home')} />}
+
+      {/* Toasts */}
+      <div className="toasts-container">
+        {toasts.map(toast => (
+          <Toast key={toast.id} toast={toast} onClose={() => removeToast(toast.id)} />
+        ))}
+      </div>
+    </div>
+  )
+}

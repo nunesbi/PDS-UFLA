@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f8f9fa;
+  color: #1a1a1a;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+}
+
+@layer base {
+  h1 { @apply text-4xl font-bold; }
+  h2 { @apply text-2xl font-semibold; }
+  h3 { @apply text-xl font-medium; }
+}
+
+@layer components {
+  .btn {
+    @apply px-6 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2;
+  }
+  .btn-primary {
+    @apply bg-[#0066CC] text-white hover:bg-[#004C99] shadow-lg shadow-blue-500/20;
+  }
+  .btn-outline {
+    @apply border-2 border-gray-200 text-gray-700 hover:border-[#0066CC] hover:text-[#0066CC] bg-white;
+  }
+  .card {
+    @apply bg-white rounded-2xl shadow-sm p-6 border border-gray-100;
+  }
+  .input {
+    @apply w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#0066CC] focus:ring-2 focus:ring-blue-500/20 outline-none transition-all;
+  }
+}
